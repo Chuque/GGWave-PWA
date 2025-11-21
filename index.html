@@ -1,0 +1,20 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<link rel="manifest" href="manifest.json" />
+<title>PWA Hello World</title>
+</head>
+<body>
+<h1>Hello World PWA Offline</h1>
+<p>Se você está vendo isso offline, o PWA está funcionando.</p>
+
+
+<script>
+if ('serviceWorker' in navigator) {
+navigator.serviceWorker.register('service-worker.js');
+}
+</script>
+</body>
+</html>
