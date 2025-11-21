@@ -2,7 +2,14 @@ const CACHE = 'hello-pwa-cache-v1';
 const FILES = [
     './',
     './index.html',
-    './manifest.json'
+    './manifest.json',
+    './bacground-0.png',
+    './favicon.ico',
+    './favicon.png',
+    './style.css',
+    './waver.data',
+    './waver.js',
+    './waver.wasm'
 ];
 
 

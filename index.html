@@ -19,6 +19,8 @@
             <br>
             <button onClick="doInit()" id="butInit" style="width:60px;height:30px;" disabled>Init</button>
         </div>
+        <button onclick="initGGWave()">Init GGWave</button>
+        <button onclick="startMic()">Ativar microfone</button>
     </div>
     <div id="container_canvas" hidden>
         <canvas class="emscripten" id="canvas" oncontextmenu="event.preventDefault()"></canvas>
@@ -45,6 +47,8 @@
 </div>
 
 <script type='text/javascript'>
+
+
     window.mobilecheck = function () {
         var check = false;
         (function (a) {
@@ -166,6 +170,81 @@
             document.getElementById('container_button').hidden = true;
         }
     };
+
+    <!--<editor-fold desc="Pedir permissão de microfone">-->
+    let stream;
+
+    async function initMic() {
+        try {
+            stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+            console.log("Microfone OK", stream);
+            setTimeout(() => {
+                stopMic();
+            }, 1000);
+        } catch (e) {
+            console.error("Erro:", e);
+        }
+    }
+
+    function stopMic() {
+        if (!stream) return;
+
+        stream.getTracks().forEach(track => track.stop());
+        stream = null;
+    }
+
+    //<!--</editor-fold>-->
+
+    <!--<editor-fold desc="ggWave">-->
+    let ggwaveModule;
+    let ggwaveInstance;
+
+    async function initGGWave() {
+        ggwaveModule = await waver();  // vem do ggwave.js
+        const params = ggwaveModule.getDefaultParameters();
+        ggwaveInstance = ggwaveModule.init(params);
+    }
+
+    function textToGgwave(text) {
+        const bytes = new TextEncoder().encode(text);
+        return ggwaveModule.encode(
+            ggwaveInstance,
+            bytes,
+            ggwaveModule.TxProtocolId.GGWAVE_TX_PROTOCOL_AUDIBLE_FAST,
+            10
+        );
+    }
+
+    function decodeAudio(frame) {
+        const res = ggwaveModule.decode(ggwaveInstance, frame);
+        if (res) {
+            return new TextDecoder().decode(res);
+        }
+        return null;
+    }
+
+    async function startMic() {
+        const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+        const ctx = new AudioContext();
+        const source = ctx.createMediaStreamSource(stream);
+
+        const processor = ctx.createScriptProcessor(4096, 1, 1);
+        source.connect(processor);
+        processor.connect(ctx.destination);
+
+        processor.onaudioprocess = (e) => {
+            const frame = e.inputBuffer.getChannelData(0);
+            const text = decodeAudio(frame);
+            if (text) onMessageReceived(text);
+        };
+    }
+
+
+
+    //<!--</editor-fold>-->
+
+
+
 
 </script>
 
