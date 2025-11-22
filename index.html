@@ -1,20 +1,142 @@
 <!DOCTYPE html>
-<html lang="en">
+<html>
 <head>
-<meta charset="UTF-8" />
-<meta name="viewport" content="width=device-width, initial-scale=1.0" />
-<link rel="manifest" href="manifest.json" />
-<title>PWA Hello World</title>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <link rel="manifest" href="manifest.json" />
+    <title>PWA Hello World</title>
 </head>
 <body>
-<h1>Hello World PWA Offline</h1>
-<p>Se você está vendo isso offline, o PWA está funcionando.</p>
 
+<h3>Enviar texto via GGWave</h3>
+
+<input id="txt" type="text" placeholder="Digite algo..." style="width: 220px;">
+<button id="btn">Enviar áudio</button>
+
+<script src="ggwave.js"></script>
 
 <script>
-if ('serviceWorker' in navigator) {
-navigator.serviceWorker.register('service-worker.js');
-}
+    if ('serviceWorker' in navigator) {
+        navigator.serviceWorker.register('service-worker.js');
+    }
+
+    const myID = Math.random().toString(36).substring(2, 4).toUpperCase();
+
+    // initGGWave();
+
+    /**
+     * Tenta inicializar o módulo WASM/ggwave de várias formas conhecidas.
+     * Retorna um objeto `mod` com encode/decode/getDefaultParameters/init etc.
+     */
+    async function initGGWave() {
+
+        if (!this.context) {
+            this.context = new AudioContext({ sampleRate: 48000 });
+        }
+
+        await this.context.resume();
+        console.log('this.context.state', this.context.state);
+
+        // Alguns celulares exigem isso para poder tocar som:
+        document.body.addEventListener("touchstart", () => {
+            this.context.resume();
+        }, { once: true });
+
+        if (!this.analyserNode) {
+            this.analyserNode = this.context.createAnalyser();
+            this.analyserNode.fftSize = 2048;
+        }
+
+        if (!this.ggwave && ggwave_factory) {
+            this.ggwave = await ggwave_factory();
+        }
+
+        const parameters = this.ggwave.getDefaultParameters();
+        parameters.sampleRateInp = this.context.sampleRate;
+        parameters.sampleRateOut = this.context.sampleRate;
+        parameters.soundMarkerThreshold = 4; //??
+        console.log('parameters', parameters)
+
+        this.instance = this.ggwave.init(parameters);
+        console.log('ggwave initialized UTIL', {instance: this.instance, ggwave: this.ggwave});
+
+        return this.ggwave;
+    }
+
+    // Exemplo de uso:
+    document.getElementById('btn').addEventListener('click', async () => {
+        await initGGWave();
+
+        const ggwave = this.ggwave;
+        const context = this.context;
+        const instance = this.instance;
+        const analyserNode = this.analyserNode;
+
+        // --- FIX PARA iOS/Android BLOQUEANDO SOM ---
+        if (context.state === "suspended") {
+            try {
+                await context.resume();
+            } catch (e) {
+                console.warn("Falha no resume:", e);
+            }
+        }
+
+        // iOS precisa de uma "nota silenciosa" para destravar
+        const unlock = context.createBufferSource();
+        unlock.buffer = context.createBuffer(1, 1, context.sampleRate);
+        unlock.connect(context.destination);
+        try { unlock.start(0); } catch {}
+
+        const message = document.getElementById('txt').value;
+        const msg = `${myID}$${message}`;
+
+        try {
+            const waveform = ggwave.encode(
+                instance,
+                msg,
+                ggwave.ProtocolId.GGWAVE_PROTOCOL_AUDIBLE_FAST,
+                10
+            );
+
+            const buf = convertTypedArray(waveform, Float32Array);
+
+            if (buf.some(x => !Number.isFinite(x) || x < -1 || x > 1)) {
+                console.log("Valores inválidos no buffer", buf.slice(0, 50));
+                return;
+            }
+
+            const buffer = context.createBuffer(1, buf.length, context.sampleRate);
+            buffer.getChannelData(0).set(buf);
+            const source = context.createBufferSource();
+            source.buffer = buffer;
+
+            // If global analyser node exists, connect through it
+            if (analyserNode) {
+                source.connect(analyserNode);
+                analyserNode.connect(context.destination);
+            } else {
+                source.connect(context.destination);
+            }
+
+            console.log('this.context.state2', this.context.state);
+
+            source.start(0);
+
+            // Emit event for sent message
+            // audioMessageEmitter.emit('audioMessage', message);
+        } catch (err) {
+            console.error('Erro ao inicializar GGWave:', err);
+            alert('Erro ao inicializar GGWave — veja console para detalhes.');
+        }
+    });
+
+    // Helper function to convert array types
+    function convertTypedArray(src, type) {
+        const buffer = new ArrayBuffer(src.byteLength);
+        new src.constructor(buffer).set(src);
+        return new type(buffer);
+    }
 </script>
+
 </body>
 </html>
