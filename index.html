@@ -12,6 +12,11 @@
 
 <input id="txt" type="text" placeholder="Digite algo..." style="width: 220px;">
 <button id="btn">Enviar áudio</button>
+<button id="listenBtn">Ouvir áudio</button>
+<div id="received"></div>
+<br>
+<span>v1.0.1</span>
+
 
 <script src="ggwave.js"></script>
 
@@ -57,10 +62,11 @@
         parameters.soundMarkerThreshold = 4; //??
         console.log('parameters', parameters)
 
-        this.instance = this.ggwave.init(parameters);
-        console.log('ggwave initialized UTIL', {instance: this.instance, ggwave: this.ggwave});
+        if(!this.instance) {
+            this.instance = this.ggwave.init(parameters);
+        }
 
-        return this.ggwave;
+        console.log('ggwave initialized UTIL', {instance: this.instance, ggwave: this.ggwave});
     }
 
     // Exemplo de uso:
@@ -136,6 +142,85 @@
         new src.constructor(buffer).set(src);
         return new type(buffer);
     }
+
+    let micStream = null;
+    let processor = null;
+    let listening = false;
+
+    document.getElementById('listenBtn').addEventListener('click', async () => {
+        if (listening) return;
+
+        await initGGWave();
+
+        const ggwave = this.ggwave;
+        const context = this.context;
+        const instance = this.instance;
+
+        listening = true;
+        document.getElementById('received').innerText = 'Ouvindo...';
+
+        // iOS / Android unlock
+        if (context.state === 'suspended') {
+            await context.resume();
+        }
+
+        micStream = await navigator.mediaDevices.getUserMedia({ audio: true });
+        const source = context.createMediaStreamSource(micStream);
+
+        processor = context.createScriptProcessor(1024, 1, 1);
+
+        processor.onaudioprocess = (e) => {
+            if (!listening) return;
+
+            const input = e.inputBuffer.getChannelData(0);
+
+            // ggwave espera Float32Array
+            const pcmBytes = float32ToPCM16Bytes(input);
+            const decoded = ggwave.decode(instance, pcmBytes);
+
+            if (decoded && decoded.length > 0) {
+                listening = false;
+
+                stopListening();
+
+                document.getElementById('received').innerText =
+                    'Recebido: ' + decoded;
+
+                console.log('Mensagem recebida:', decoded);
+            }
+        };
+
+        source.connect(processor);
+        processor.connect(context.destination);
+    });
+
+    function stopListening() {
+        if (processor) {
+            processor.disconnect();
+            processor = null;
+        }
+
+        if (micStream) {
+            micStream.getTracks().forEach(t => t.stop());
+            micStream = null;
+        }
+
+        document.getElementById('received').innerText += ' (finalizado)';
+    }
+
+    function float32ToPCM16Bytes(float32) {
+        const buffer = new ArrayBuffer(float32.length * 2);
+        const view = new DataView(buffer);
+
+        let offset = 0;
+        for (let i = 0; i < float32.length; i++, offset += 2) {
+            let s = Math.max(-1, Math.min(1, float32[i]));
+            view.setInt16(offset, s < 0 ? s * 0x8000 : s * 0x7fff, true);
+        }
+
+        return new Uint8Array(buffer);
+    }
+
 </script>
 
 </body>
