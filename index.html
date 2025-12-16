@@ -15,7 +15,7 @@
 <button id="listenBtn">Ouvir áudio</button>
 <div id="received"></div>
 <br>
-<span>v1.0.2</span>
+<span>v1.0.3</span>
 
 
 <script src="ggwave.js"></script>
@@ -25,7 +25,7 @@
         navigator.serviceWorker.register('service-worker.js');
     }
 
-    let rxBuffer = [];
+    let rxBuffer = new Uint8Array(0);
     let rxBufferSize = 0;
     const RX_TARGET_SAMPLES = 48000 / 2; // ~0.5s
 
@@ -179,29 +179,23 @@
             const input = e.inputBuffer.getChannelData(0);
             const pcmBytes = float32ToPCM16Bytes(input);
 
-            rxBuffer.push(pcmBytes);
-            rxBufferSize += pcmBytes.length;
+            // concatena mantendo histórico
+            const merged = new Uint8Array(rxBuffer.length + pcmBytes.length);
+            merged.set(rxBuffer, 0);
+            merged.set(pcmBytes, rxBuffer.length);
+            rxBuffer = merged;
 
-            if (rxBufferSize >= RX_TARGET_SAMPLES * 2) {
-                const merged = new Uint8Array(rxBufferSize);
-                let offset = 0;
+            // chama decode SEM resetar buffer
+            const decoded = ggwave.decode(instance, rxBuffer);
 
-                for (const chunk of rxBuffer) {
-                    merged.set(chunk, offset);
-                    offset += chunk.length;
-                }
+            if (decoded && decoded.length > 0) {
+                stopListening();
+                document.getElementById('received').innerText =
+                    'Recebido: ' + decoded;
 
-                const decoded = ggwave.decode(instance, merged);
-
-                rxBuffer = [];
-                rxBufferSize = 0;
-
-                if (decoded && decoded.length > 0) {
-                    stopListening();
-                    document.getElementById('received').innerText =
-                        'Recebido: ' + decoded;
-                }
+                rxBuffer = new Uint8Array(0); // agora sim pode limpar
             }
+
         };
 
         source.connect(processor);
